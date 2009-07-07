@@ -1,0 +1,153 @@
+This is just a quick little exercise for me to practice embedding
+lua into a C application.
+
+No it isn't. It's a opengl based lua drawing console. We want to provide
+lua the following functions:
+
+draw_line( start, end )
+draw_point( x, y )
+set_color( color )
+clear_screen()
+
+There will be a lua interpreter running in the lower half of the screen.
+This is my attempt at implementing an efficient and elegant world
+representation. But before I do that, I want to try and implement
+something like the system described for the game LOVE, on the author's
+blog; Basically where most people would use pointers to structures to
+represent relationships between triangles, this guy relates them with
+plain old arithmetic. I wouldn't call the code easy to understand,
+but once you can wrap your head around it, it seems to offer some nice
+benefits; you can pass your unmodified vertex data straight to openGL and
+draw the world in one call, and you don't use (admittedly negligible)
+memory and brainpower keeping track of pointers. Also, in the demo
+for LOVE the player was able to modify terrain, something that will be
+integral to this one. So I'll listen to the evil genius at least long
+enough to understand his coding style.
+
+But first, I have to understand it :)
+
+My current understanding of the system:
+
+- He gets a list of all vertexes from the game world (specifically
+	from a Verse server, but that's not important)
+
+- This list is sorted so that all quads come first, followed
+	by the triangles. Keeping a reference count of quads and tris
+	allows you to jump through the reference array appropriately.
+
+- He keeps a separate array of integers. Each integer is the array
+	subscript of the vertex of a polygon.
+
+- He keeps a separate neighbours array, which contains integers that
+	are the subscripts in the reference array of vertexes that begin
+	edges between two polygons.
+
+- He uses a huge monstrosity of an algorithm to compute the neighbor
+	values. The end result is nice in that you get the property
+	that neighbor[neighbor[ref[x]]] = ref[x] for neighboring edges.
+	I don't know why this is useful.
+
+Honestly, now that I've thought it through, this system isn't so bad,
+save for one problem: The neighbors algorithm. He calls it clever. I
+call it atrocious. I am floored that a human can write such code. I
+really cannot fathom how he could write such a complex system of loops
+and conditionals with the confidence that it works. I can't think of a
+time when I've been so simultaneously impressed and horrified.
+
+I should explore the benefits of using a few pointers here and there,
+he seems to be terrified of them.
+
+Here's my attempt at replacing this algorithm.
+
+First, the problem:
+
+	We have an array of integer references to vertices of in-game
+	triangles. Produce an array where each value contains the integer
+	reference to a reference of a vertex endpoint of an edge shared
+	with a neighboring triangle or quad, or -1 if there is none.
+
+ Visualization: v for vertex, r for reference index.
+
+      v0      v1
+      +-------+\r4
+      |r0   r1| \
+      |r3   r2| / v4/r5
+      +-------+/
+     v3       v2/r6
+
+	float vertices[5] = { v0, v1, v2, v3, v4 };
+	int tri_count = 1;
+	int quad_count = 1;
+	int vert_ref[tri_count * 3 + quad_count * 4] = \
+    		{ 0, 1, 2, 3, 1, 4, 2 };
+    		 |   quad   |   tri  |
+
+	We want to produce
+	int neighbors[tri_count * 3 + quad_count * 4] = \
+		{ -1, 6, -1, -1, -1, -1, 1 }; 
+
+	Questions:
+		How is the vertex reference chosen? What does he mean by
+		"the first vertex?" I believe that's one of the reasons
+		for such complexity in his algorithm.
+
+		How is the symmetry such that neighbors[neighbors[6]] =
+		6 and neighbors[neighbors[1]] = 1 ? It only seems useful
+		for creating more obfuscated code.
+
+Pathfinding playground
+
+A place to practive pathfinding algorithms for the dwarves (or
+whatever the main lifetype ends up being).
+
+What I need
+	- a simple API to create agents and obstacles, spawn points and
+		goals.
+	- a drop-down console that runs an embedded lua interpreter accepting
+		commands defined in said API.
+		
+Lua API:
+	function place_obstacle( string )
+		creates an obstacle at the current mouse position. The user
+		must click to place the obstacle. Scrolling the mouse will
+		change the obstacles size ( or orientation? ). The predefined
+		obstacle shapes are:
+		
+			rectangle
+			circle
+			
+	function create_obstacle( name, list of points )
+		creates a new obstacle shape that is held in a global obstacles
+		table along with the predefined ones. Obstacles can be dragged
+		around with the left mouse button. Middle clicking on an obstacle
+		will remove that obstacle.
+		
+	function place_agent( x, y )
+		creates an agent at point x, y if that point is open. Agents can
+		be dragged around with the left mouse button and destroyed
+		with the right mouse button.
+		
+	function place_goal( x, y )
+		creates a goal at point x, y, if that point is open. Goals can be
+		dragged around with the left mouse button. Middle clicking on
+		an obstacle will remove it.
+Here is an example of one-dimensional random midpoint displacement. It's
+not very elegant and the recursive implementations means a stack
+overflow somewhere down the road, but it produces decent output with
+around 6-10 iterations.
+
+It uses SDL and openGL, so you need those installed. "common.h" just
+includes all the neccesary libraries and defines TRUE and FALSE, along
+with a few global vars. opengl_functions.c contains two functions to open
+and SDL window and configure openGL for 2D graphics. A simple 'make'
+will build the executable 'game'. The executable can then be run with
+two arguments:
+
+./game [roughness_constant | 1.0] [iterations|6]
+
+It will open a 640x480 window and draw a white ridgeline on it. Pressing
+any key but escape will regenerate the ridgeline. Escape closes the
+window.
+
+Again I just wrote this for my own learning purposes, but perhaps it
+will be useful to anyone else starting out on openGL/SDL programming.
